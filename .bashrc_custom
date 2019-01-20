@@ -1,0 +1,22 @@
+function convertPath() {
+    echo $* | sed -e 's/Program Files (x86)/Programs86/g' -e 's/Program Files/Programs/g' -e 's/\\/\//g' -e 's/C:/\/mnt\/c/'  -e 's/D:/\/mnt\/e/' -e 's/ //g'
+}
+
+export JAVA_HOME=/opt/jdk
+export M2_HOME=/mnt/c/Programs/JetBrains/IDEA/plugins/maven/lib/maven3
+export GRAILS_HOME=/opt/grails
+export GRADLE_HOME=/opt/gradle
+export GOROOT=/opt/go
+export GOPATH=$GOROOT/pkg
+export NODE_HOME=/opt/node
+export CFSSL_HOME=/opt/cfssl
+export ANDROID_HOME=/mnt/c/Programs/Android
+export GCLOUD_HOME=/opt/google-cloud-sdk
+export PATH=$NODE_HOME/bin:$(convertPath $PATH):~:$JAVA_HOME/bin:$M2_HOME/bin:$GRAILS_HOME/bin:$GRADLE_HOME/bin:$ANDROID_HOME/platform-tools:$GCLOUD_HOME/bin
+export PYTHONPATH=/opt/google/appengine/lib/webapp2-2.5.2
+
+unset NAME
+
+if [ -f ~/.bashrc_secret ]; then
+    . ~/.bashrc_secret
+fi
