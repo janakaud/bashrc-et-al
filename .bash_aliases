@@ -6,13 +6,18 @@ alias hg=hg.exe
 alias adb=adb.exe
 alias xcalib=xcalib.exe
 alias VBoxManage=VBoxManage.exe
-alias mysql=mysql.exe
+alias mysql="mysql -h 127.0.0.1"
 alias msg=msg.exe
+
+alias pip='pip2.7 --disable-pip-version-check'
 
 #alias notify-send="msg /time:3 janaka"
 alias ok='notify-send "done" && date +%T'
-function d() {
+function d_s() {
 	date -d @$@
+}
+function d() {
+	date -d @$(($1/1000))
 }
 
 alias myip='curl ipecho.net/plain'
@@ -32,11 +37,21 @@ function bb_pr_merge() {
 	bb_pr_op $1 $2 merge
 }
 function bb_pr_check() {
-	apicall https://bitbucket.org/api/2.0/repositories/adroitlogic/$1/pullrequests
+	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests
 }
+
+function bb_pr_open() {
+        confirm "opening PR '$2' on $3 of '$1'"
+        apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests --method POST --header "Content-Type: application/json" --body-data "{\"title\":\"$2\",\"source\":{\"branch\":{\"name\":\"$3\"},\"repository\":{\"full_name\":\"janakaud/$1\"}},\"destination\":{\"branch\":{\"name\":\"$3\"}},\"close_source_branch\":false,\"reviewers\":[{\"type\":\"user\",\"username\":\"$BB_USER_1\"},{\"type\":\"user\",\"username\":\"$BB_USER_2\"}]}"
+}
+
+function bb_pr_decline() {
+	bb_pr_op $1 $2 decline --header "Content-Type: application/json" --body-data "{\"reason\":\"$3\"}"
+}
+
 function bb_pr_op() {
 	confirm "$3 $1 PR $2"
-	apicall --method POST https://bitbucket.org/api/2.0/repositories/adroitlogic/$1/pullrequests/$2/$3
+	apicall --method POST https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests/$2/$3 "${@:4:$#}"
 }
 
 function bb_pr_patch() {
@@ -46,7 +61,11 @@ function bb_commit_patch() {
 	bb_patch_op $1 patch/$2
 }
 function bb_patch_op() {
-	apicall https://bitbucket.org/api/2.0/repositories/adroitlogic/$1/$2 | gunzip
+	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/$2
+}
+
+function bb_del_repo() {
+	apicall https://bitbucket.org/api/2.0/repositories/janakaud/$1 --method DELETE
 }
 
 function gh_del_repo() {
@@ -59,7 +78,7 @@ function gh_new_repo() {
 }
 
 function apicall() {
-	dlu janakaud --ask-password --auth-no-challenge -q $@
+	dlu janakaud --ask-password --auth-no-challenge -q "$@" | gunzip
 }
 function confirm() {
 	echo -n "Press Ctrl-C to abort $1"
@@ -96,7 +115,7 @@ function short() {
 	dl --header 'Content-Type: application/json' --post-data "{\"longUrl\":\"$1\"}" https://www.googleapis.com/urlshortener/v1/url?key=$GAPI_KEY | gunzip
 }
 
-function ymd() {
+function ymd_ms() {
 	date -Iseconds -u -d @$(($1/1000))
 }
 
@@ -107,21 +126,26 @@ function fixIssue() {
 		echo -n "Commit: "
 		read COMMIT
 	fi
-	resolveIssue $1 "Fixed in [https://bitbucket.org/adroitlogic/new-idea/commits/$COMMIT $COMMIT]" FIXED $3
+	resolveIssue $1 "Fixed in [https://bitbucket.org/$BB_ORG/new-idea/commits/$COMMIT $COMMIT]" FIXED $3
+}
+function fixedIn() {
+	readLn "Project" PROJECT "$1"
+	readLn "Fix Version" FIXVER "$2"
+	pyu list issues --project $PROJECT --filter "version: $FIXVER"
 }
 
 function resolveIssue() {
 	readLn "Issue" ISSUE "$1"
 	readLn "Comment" COMMENT "$2"
 	readLn "State" STATE "$3"
-	readLn "Fix Version" FIX_VERSION "1.2.8"
+	readLn "Fix Version" FIX_VERSION "$FIXVER"
 	pyuConfirm update issue --comment "$COMMENT" --command "state $STATE add fixed in $FIX_VERSION" $ISSUE
 }
 
 function issuesAfter() {
 	readLn "Project" PROJECT "$1"
 	readLn "Since epoch" LASTDAY "$(date +%s)000"
-	pyu list issues --project $PROJECT --filter "state: -Fixed -Closed -{Cannot Reproduce} -Duplicate -Incomplete created: $(date +%Y-%m-%dT%H:%M:%S -d @$(($LASTDAY/1000+1))) .. {Today}"
+	pyu list issues --project $PROJECT --filter "state: -Fixed -Closed -{Cannot Reproduce} -Duplicate -Incomplete updated: $(date +%Y-%m-%dT%H:%M:%S -d @$(($LASTDAY/1000+1))) .. {Today}"
 }
 alias checkInProgress='pyu list issues --project SIGMA --filter "state IN PROGRESS"'
 alias inProgress='pyu update issue --command "state IN PROGRESS assigned to me"'
@@ -186,11 +210,14 @@ function cat2html() { cat $1 | html > $TMP/`basename $1`.html; }
 function c2push() { cat2html $1 && push $TMP/`basename $1`.html; }
 
 alias atob='base64 -d -'
+alias btoa='base64 -w0'
 
 alias temp='cat /sys/class/thermal/thermal_zone*/temp'
 alias r='clear'
 
 alias unzip='unzip -qq'
+
+alias logsearch='find -name \*.log.gz -print0 | xargs -0 zgrep'
 
 alias gaerun='python /opt/google/appengine/dev_appserver.py --log_level=debug .'
 alias gaepush='rm -f *.pyc && python /opt/google-cloud-sdk/platform/google_appengine/appcfg.py --skip_sdk_update_check --oauth2'
@@ -269,6 +296,8 @@ alias ascp='scp $anonssh '
 alias asftp='sftp $anonssh '
 alias sshcfg='chmod +w ~/.ssh/config && vi ~/.ssh/config && chmod 400 ~/.ssh/config'
 
+alias awsj='aws --profile janaka'
+
 function cf() { aws cloudformation $@; }
 function cfls() { cf describe-stacks --query 'Stacks[*].StackName' --output text $@; }
 function cfgs() { cf describe-stacks --stack-name $1 ${@:2:$#}; }
@@ -282,16 +311,26 @@ function invoke() {
 	ok
 }
 
-alias ec2ls='aws ec2 describe-instances --query "Reservations[*].Instances[*].[LaunchTime, InstanceId, PublicIpAddress, State.Name, Tags]"'
+EC2_LS='ec2 describe-instances --query Reservations[*].Instances[*].[LaunchTime,InstanceId,PublicIpAddress,State.Name,Tags]'
+EC2_IMG="ec2 describe-images --owners self --query Images"
+EC2_SNAP="ec2 describe-snapshots --owner-ids self --query Snapshots"
+
+alias ec2ls='aws $EC2_LS'
+alias ec2run='ec2ls --filter Name=instance-state-name,Values=running'
 alias ec2up='aws ec2 start-instances --instance-ids'
 alias ec2wait='aws ec2 wait instance-running --instance-ids'
 
 function ec2_ip() {
-	aws ec2 authorize-security-group-ingress --group-id ${1:$DEFAULT_SECURITY_GROUP} --ip-permissions "ToPort=${2:-22},FromPort=${2:-22},IpProtocol=tcp,IpRanges=[{CidrIp=$(curl ipecho.net/plain)/32}]"
+	aws ec2 authorize-security-group-ingress --group-id ${1:-$DEFAULT_SECURITY_GROUP} --ip-permissions "ToPort=${2:-22},FromPort=${2:-22},IpProtocol=tcp,IpRanges=[{CidrIp=$(curl ipecho.net/plain)/32}]"
 }
 
 function awsall() {
-	for region in us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-northeast-1 ap-northeast-2 ap-southeast-1 ap-southeast-2 sa-east-1 ap-south-1; do
+	for region in \
+us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 \
+eu-west-1 eu-west-2 eu-west-3 eu-central-1 eu-north-1 \
+ap-northeast-1 ap-northeast-2 ap-southeast-1 ap-southeast-2 ap-south-1 \
+sa-east-1 \
+	; do
 	#for region in us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1; do
 		echo
 		echo $region
@@ -304,24 +343,54 @@ function checkbill() {
 		echo
 		echo "===="
 		echo $prof
-		for cmd in "kinesis list-streams" "dynamodb list-tables" "rds describe-db-instances --query DBInstances[*].DBInstanceIdentifier" "rds describe-db-snapshots" "machinelearning describe-ml-models"; do
+		for cmd in \
+"kinesis list-streams --query StreamNames" \
+"dynamodb list-tables --query TableNames" \
+"rds describe-db-instances --query DBInstances[*].DBInstanceIdentifier" \
+"rds describe-db-snapshots --query DBSnapshots" \
+"rds describe-db-clusters --query DBClusters" \
+"rds describe-db-cluster-snapshots --query DBClusterSnapshots" \
+"elasticache describe-cache-clusters --query CacheClusters" \
+"elasticache describe-snapshots --query Snapshots" \
+"$EC2_LS" "$EC2_IMG" "$EC2_SNAP" \
+		; do
 			echo
 			echo $cmd
-			aws --profile $prof $(echo $cmd)
+			awsall --profile $prof $(echo $cmd)
+		done
+		echo
+		echo "ML"
+		for region in us-east-1 eu-west-1; do
+			echo
+			echo $region
+			aws --region $region machinelearning describe-ml-models --query Results
 		done
 	done
 }
 
+alias now='date +%s.%N'
 alias eeye='date -d @$((($(date +%s)-86400))) +%F'
 
-function prodbill() {
+function daybill() {
 	yesterday=$(date -d @$((($(date +%s)-86400))) +%F)
 	aws ce get-cost-and-usage --time-period Start=$yesterday,End=$(date +%F) --granularity=DAILY --metrics BlendedCost --group-by Type=DIMENSION,Key=SERVICE --profile $1
 #OPERATION --output table --query 'ResultsByTime[*].[Groups[*].[Keys[0],Metrics.BlendedCost.Amount]]'
 }
 
+function dailybill() {
+        monthbill $1 DAILY
+}
+
 function monthbill() {
-	aws --profile ${1:-"janaka"} ce get-cost-and-usage --time-period Start=$(date +%Y-%m-01),End=$(date +%Y-%m-%d) --granularity=MONTHLY --metrics BlendedCost --group-by Type=DIMENSION,Key=SERVICE
+	aws --profile $1 ce get-cost-and-usage --time-period Start=$(date +%Y-%m-01),End=$(date +%Y-%m-%d) --granularity=${2:-MONTHLY} --metrics BlendedCost --group-by Type=DIMENSION,Key=SERVICE
+}
+
+function s3sizes() {
+	for bucket in `awsr s3api list-buckets --query 'Buckets[*].Name' --output text`; do
+		size=$(awsr cloudwatch get-metric-statistics --namespace AWS/S3 --start-time $(eeye)T00:00:00 --end-time $(date +%F)T00:00:00 --period 86400 --metric-name BucketSizeBytes --dimensions Name=StorageType,Value=StandardStorage Name=BucketName,Value=$bucket --statistics Average --output text --query 'Datapoints[0].Average')
+		if [ $size = "None" ]; then size=0; fi
+	printf "%8.3f  %s\n" $(echo $size/1048576 | bc -l) $bucket
+	done
 }
 
 function s3size() {
@@ -331,7 +400,7 @@ function s3count() {
 	s3metric NumberOfObjects AllStorageTypes $@
 }
 function s3metric() {
-	aws --profile ${4:-"janaka"} cloudwatch get-metric-statistics --namespace AWS/S3 --start-time ${5:-$(eeye)}T00:00:00 --end-time ${6:-$(date +%F)}T00:00:00 --period 86400 --metric-name $1 --dimensions Name=StorageType,Value=$2 Name=BucketName,Value=$3 --statistics Average ${@:7:$#}
+	aws --profile $4 cloudwatch get-metric-statistics --namespace AWS/S3 --start-time ${5:-$(eeye)}T00:00:00 --end-time ${6:-$(date +%F)}T00:00:00 --period 86400 --metric-name $1 --dimensions Name=StorageType,Value=$2 Name=BucketName,Value=$3 --statistics Average ${@:7:$#}
 }
 
 function s3expire() {
@@ -342,6 +411,22 @@ function s3expire-versioned() {
 	aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Enabled","Expiration":{"ExpiredObjectDeleteMarker":true},"NoncurrentVersionExpiration":{"NoncurrentDays":1},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1},"Prefix":""}]}' --bucket $@
 }
 
+function s3unexpire() {
+        aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Disabled","Prefix":"","Expiration":{"Days":3650}}]}' --bucket $@
+}
+
+function s3life() {
+	aws s3api get-bucket-lifecycle-configuration --bucket $@
+}
+
+function awscred() {
+  readLn "AWS Access Key" accessKey
+  readLn "AWS Access Secret" accessSecret
+  export AWS_ACCESS_KEY_ID=$accessKey
+  export AWS_SECRET_ACCESS_KEY=$accessSecret
+  export AWS_DEFAULT_REGION=us-east-1
+}
+
 function gh() { gcloud $@ --help; }
 
 alias watch='watch -n 1 '
@@ -349,6 +434,9 @@ alias enve='vi ~/.bashrc_custom && source ~/.bashrc_custom'
 alias enves='vi ~/.bashrc_secret && source ~/.bashrc_secret'
 alias alie='vi ~/.bash_aliases && source ~/.bash_aliases'
 alias alies='vi ~/.bash_aliases_secret && source ~/.bash_aliases_secret'
+
+alias vacred='vi ~/.aws/credentials'
+alias vhis='vi ~/.bash_history'
 
 alias sys='kubectl --namespace=kube-system'
 alias pod='kubectl get pods'
@@ -494,8 +582,6 @@ function killsig() {
 
 function bintail() { xxd $1 | tail -n5; }
 
-alias s3upload='awsp s3 cp --acl public-read'
-
 function nunzip() { echo "Archive:$1"; unzip -l $1; }
 function findinjar() {
 	ext=$2
@@ -537,17 +623,22 @@ function gputhrottle() {
 	done
 }
 
-alias xdocsrch='grep -iIr --exclude-dir="_preview" --exclude-dir=".build" --exclude-dir="ultra*" --exclude-dir="imonitor" --exclude-dir="as2*" --exclude-dir="project-x" --exclude-dir="processors" --exclude-dir="connectors" --include="*.adoc"'
-alias codegrep='grep -iIr --exclude-dir="sandbox" --exclude-dir="integration-suite" --exclude-dir="UltraESB" --exclude-dir="IPS" --include="*.java"'
-function codefind() {
-	find ~/code -name $1 -prune "sandbox" -prune "integration-suite" -prune "UltraESB" -prune "IPS"
-}
+alias srcha='grep -iIr --include="*.adoc"'
 
 function asciibuild() {
 	asciibinder build -p $1/$2:$3
 }
 alias idebug='/opt/idea/jre/bin/java -Xbootclasspath/a:/opt/idea/lib/boot.jar -classpath /opt/idea/lib/bootstrap.jar:/opt/idea/lib/extensions.jar:/opt/idea/lib/util.jar:/opt/idea/lib/jdom.jar:/opt/idea/lib/log4j.jar:/opt/idea/lib/trove4j.jar:/opt/idea/lib/jna.jar:/opt/idea/jre/lib/tools.jar -Xdebug -Xnoagent -Xrunjdwp:transport=dt_socket,server=y,address=8000 -Xms128m -Xmx750m -XX:ReservedCodeCacheSize=240m -XX:+UseConcMarkSweepGC -XX:SoftRefLRUPolicyMSPerMB=50 -ea -Dsun.io.useCanonCaches=false -Djava.net.preferIPv4Stack=true -XX:+HeapDumpOnOutOfMemoryError -XX:-OmitStackTraceInFastThrow -Dawt.useSystemAAFontSettings=lcd -Dsun.java2d.renderer=sun.java2d.marlin.MarlinRenderingEngine -XX:ErrorFile=/home/janaka/java_error_in_IDEA_.log -XX:HeapDumpPath=/home/janaka/java_error_in_IDEA.hprof -Didea.paths.selector=IntelliJIdea2017.1 -Djb.vmOptionsFile=/opt/idea/bin/idea64.vmoptions -Didea.jre.check=true com.intellij.idea.Main'
 alias jre='drun -v `pwd`:/tmp openjdk:8-jre-alpine'
+
+function zabup() { zabop start; }
+function zabdown() { zabop stop; }
+function zabop() {
+	for svc in zabbix-agent zabbix-server apache2; do
+		service $svc $1
+	done
+}
+
 
 if [ -f ~/.bash_aliases_secret ]; then
     . ~/.bash_aliases_secret
