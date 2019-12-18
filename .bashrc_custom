@@ -12,8 +12,11 @@ export NODE_HOME=/opt/node
 export CFSSL_HOME=/opt/cfssl
 export ANDROID_HOME=/mnt/c/Programs/Android
 export GCLOUD_HOME=/opt/google-cloud-sdk
+echo '
 export PATH=$NODE_HOME/bin:$(convertPath $PATH):~:$JAVA_HOME/bin:$M2_HOME/bin:$GRAILS_HOME/bin:$GRADLE_HOME/bin:$ANDROID_HOME/platform-tools:$GCLOUD_HOME/bin
-export PYTHONPATH=/opt/google/appengine/lib/webapp2-2.5.2
+' > /dev/null
+export PATH=$(echo $PATH | sed -re 's/\/mnt\/c\/[^:]+://g'):~/.local/lib/aws/bin:$NODE_HOME/bin:~:$JAVA_HOME/bin:$M2_HOME/bin:$GRAILS_HOME/bin:$GRADLE_HOME/bin:$ANDROID_HOME/platform-tools:$GCLOUD_HOME/bin
+export PYTHONPATH=$GCLOUD_HOME/lib/third_party:$GCLOUD_HOME/platform/google_appengine
 
 unset NAME
 

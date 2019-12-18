@@ -1,17 +1,16 @@
 TMP=/mnt/c/Windows/Temp
 LOCAL_TMP=/mnt/c/Users/janaka/AppData/Local/Temp
 
-alias cmd=cmd.exe
-alias hg=hg.exe
-alias adb=adb.exe
-alias xcalib=xcalib.exe
+alias cmd=/mnt/c/Windows/System32/cmd.exe
+alias adb=/mnt/c/Programs/Android/sdk/platform-tools/adb.exe
+alias xcalib=/mnt/c/Programs/xcalib/xcalib.exe
 alias VBoxManage=VBoxManage.exe
 alias mysql="mysql -h 127.0.0.1"
-alias msg=msg.exe
+alias msg=/mnt/c/Windows/System32/msg.exe
 
 alias pip='pip2.7 --disable-pip-version-check'
 
-#alias notify-send="msg /time:3 janaka"
+alias notify-send="msg /time:3 janaka"
 alias ok='notify-send "done" && date +%T'
 function d_s() {
 	date -d @$@
@@ -21,6 +20,10 @@ function d() {
 }
 
 alias myip='curl ipecho.net/plain'
+function call() {
+	readLn "Method" METHOD GET
+	curl -X$METHOD "$@"
+}
 
 alias dlwg='wget -S --no-check-certificate --content-on-error --header="Accept-Encoding: gzip"'
 alias dl='dlwg -O -'
@@ -41,8 +44,8 @@ function bb_pr_check() {
 }
 
 function bb_pr_open() {
-        confirm "opening PR '$2' on $3 of '$1'"
-        apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests --method POST --header "Content-Type: application/json" --body-data "{\"title\":\"$2\",\"source\":{\"branch\":{\"name\":\"$3\"},\"repository\":{\"full_name\":\"janakaud/$1\"}},\"destination\":{\"branch\":{\"name\":\"$3\"}},\"close_source_branch\":false,\"reviewers\":[{\"type\":\"user\",\"username\":\"$BB_USER_1\"},{\"type\":\"user\",\"username\":\"$BB_USER_2\"}]}"
+	confirm "opening PR '$2' on $3 of '$1'"
+	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests --method POST --header "Content-Type: application/json" --body-data "{\"title\":\"$2\",\"source\":{\"branch\":{\"name\":\"$3\"},\"repository\":{\"full_name\":\"janakaud/$1\"}},\"destination\":{\"branch\":{\"name\":\"$3\"}},\"close_source_branch\":false,\"reviewers\":[{\"type\":\"user\",\"username\":\"$BB_USER_1\"},{\"type\":\"user\",\"username\":\"$BB_USER_2\"}]}"
 }
 
 function bb_pr_decline() {
@@ -126,7 +129,7 @@ function fixIssue() {
 		echo -n "Commit: "
 		read COMMIT
 	fi
-	resolveIssue $1 "Fixed in [https://bitbucket.org/$BB_ORG/new-idea/commits/$COMMIT $COMMIT]" FIXED $3
+	resolveIssue $1 "Fixed in [$COMMIT](https://bitbucket.org/$BB_ORG/new-idea/commits/$COMMIT)" FIXED $3
 }
 function fixedIn() {
 	readLn "Project" PROJECT "$1"
@@ -311,17 +314,21 @@ function invoke() {
 	ok
 }
 
-EC2_LS='ec2 describe-instances --query Reservations[*].Instances[*].[LaunchTime,InstanceId,PublicIpAddress,State.Name,Tags]'
+EC2_LS='ec2 describe-instances --query Reservations[*].Instances[*].[LaunchTime,InstanceId,InstanceType,PublicIpAddress,State.Name,Tags]'
 EC2_IMG="ec2 describe-images --owners self --query Images"
 EC2_SNAP="ec2 describe-snapshots --owner-ids self --query Snapshots"
 
 alias ec2ls='aws $EC2_LS'
-alias ec2run='ec2ls --filter Name=instance-state-name,Values=running'
+alias ec2live='ec2ls --filter Name=instance-state-name,Values=running'
 alias ec2up='aws ec2 start-instances --instance-ids'
+alias ec2down='aws ec2 stop-instances --instance-ids'
 alias ec2wait='aws ec2 wait instance-running --instance-ids'
+function ec2run() {
+	aws ec2 run-instances --image-id $1 --associate-public-ip-address --instance-type t2.micro --key-name $2 --tag-specifications Key=Name,Value=$3 ${@:4:$#}
+}
 
 function ec2_ip() {
-	aws ec2 authorize-security-group-ingress --group-id ${1:-$DEFAULT_SECURITY_GROUP} --ip-permissions "ToPort=${2:-22},FromPort=${2:-22},IpProtocol=tcp,IpRanges=[{CidrIp=$(curl ipecho.net/plain)/32}]"
+	aws ec2 authorize-security-group-ingress --group-id ${1:-$DEFAULT_SECURITY_GROUP} --ip-permissions "ToPort=${2:-22},FromPort=${2:-22},IpProtocol=tcp,IpRanges=[{CidrIp=${3:-$(curl ipecho.net/plain)/32}}]" ${@:4:$#}
 }
 
 function awsall() {
@@ -378,19 +385,44 @@ function daybill() {
 }
 
 function dailybill() {
-        monthbill $1 DAILY
+	monthbill $1 DAILY
 }
 
 function monthbill() {
 	aws --profile $1 ce get-cost-and-usage --time-period Start=$(date +%Y-%m-01),End=$(date +%Y-%m-%d) --granularity=${2:-MONTHLY} --metrics BlendedCost --group-by Type=DIMENSION,Key=SERVICE
 }
 
+alias s3loc='aws s3api get-bucket-location --bucket'
+function s3ls() {
+	aws s3 ls --recursive s3://$1 ${@:2:$#}
+}
+function s3rb() {
+	aws s3 rb --force s3://$1 ${@:2:$#}
+}
 function s3sizes() {
-	for bucket in `awsr s3api list-buckets --query 'Buckets[*].Name' --output text`; do
-		size=$(awsr cloudwatch get-metric-statistics --namespace AWS/S3 --start-time $(eeye)T00:00:00 --end-time $(date +%F)T00:00:00 --period 86400 --metric-name BucketSizeBytes --dimensions Name=StorageType,Value=StandardStorage Name=BucketName,Value=$bucket --statistics Average --output text --query 'Datapoints[0].Average')
-		if [ $size = "None" ]; then size=0; fi
-	printf "%8.3f  %s\n" $(echo $size/1048576 | bc -l) $bucket
+	REGION=${AWS_DEFAULT_REGION:-${AWS_REGION:-"us-east-1"}}
+	defolts=()
+	killall awsr; rm /tmp/awsr_*
+	for bucket in `awsr s3api list-buckets --query 'Buckets[*].Name' --output text $@`; do
+#	for bucket in a b c d e-us-west-1 f g h i-ap-southeast-1 j k foo-bar-123 x-c-d-3; do
+		region=$(echo $bucket | grep -oP "\w+-\w+-\d\b")
+		if [ "$region" = "$REGION" ] || [ -z $region ]; then
+			defolts+=($bucket)
+			continue
+		fi
+		_s3_size $bucket aws --region $region $@
 	done
+	for bucket in ${defolts[@]}; do
+		_s3_size $bucket awsr $@
+	done
+}
+function _s3_size() {
+	size=$(AWS=${2:-aws} s3size $1 --output text --query 'Datapoints[0].Average' ${@:3:$#})
+#echo $size
+#echo '
+	if [ $size = "None" ]; then size=0; fi
+	printf "%8.3f  %s\n" $(echo $size/1048576 | bc -l) $1
+#'>/dev/null
 }
 
 function s3size() {
@@ -400,7 +432,7 @@ function s3count() {
 	s3metric NumberOfObjects AllStorageTypes $@
 }
 function s3metric() {
-	aws --profile $4 cloudwatch get-metric-statistics --namespace AWS/S3 --start-time ${5:-$(eeye)}T00:00:00 --end-time ${6:-$(date +%F)}T00:00:00 --period 86400 --metric-name $1 --dimensions Name=StorageType,Value=$2 Name=BucketName,Value=$3 --statistics Average ${@:7:$#}
+	${AWS:-aws} cloudwatch get-metric-statistics --namespace AWS/S3 --start-time ${START:-$(eeye)}T00:00:00 --end-time ${END:-$(date +%F)}T00:00:00 --period 86400 --metric-name $1 --dimensions Name=StorageType,Value=$2 Name=BucketName,Value=$3 --statistics Average ${@:4:$#}
 }
 
 function s3expire() {
@@ -412,7 +444,7 @@ function s3expire-versioned() {
 }
 
 function s3unexpire() {
-        aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Disabled","Prefix":"","Expiration":{"Days":3650}}]}' --bucket $@
+	aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Disabled","Prefix":"","Expiration":{"Days":3650}}]}' --bucket $@
 }
 
 function s3life() {
@@ -420,11 +452,11 @@ function s3life() {
 }
 
 function awscred() {
-  readLn "AWS Access Key" accessKey
-  readLn "AWS Access Secret" accessSecret
-  export AWS_ACCESS_KEY_ID=$accessKey
-  export AWS_SECRET_ACCESS_KEY=$accessSecret
-  export AWS_DEFAULT_REGION=us-east-1
+	readLn "AWS Access Key" accessKey
+	readLn "AWS Access Secret" accessSecret
+	export AWS_ACCESS_KEY_ID=$accessKey
+	export AWS_SECRET_ACCESS_KEY=$accessSecret
+	export AWS_DEFAULT_REGION=us-east-1
 }
 
 function gh() { gcloud $@ --help; }
@@ -641,5 +673,5 @@ function zabop() {
 
 
 if [ -f ~/.bash_aliases_secret ]; then
-    . ~/.bash_aliases_secret
+	. ~/.bash_aliases_secret
 fi
