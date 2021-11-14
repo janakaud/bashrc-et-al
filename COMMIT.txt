@@ -1,0 +1,3 @@
+Execute git commands with LD_PRELOAD=/path/to/GitBSLR.so
+
+github.com/Alcaro/GitBSLR

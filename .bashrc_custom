@@ -12,13 +12,22 @@ export NODE_HOME=/opt/node
 export CFSSL_HOME=/opt/cfssl
 export ANDROID_HOME=/mnt/c/Programs/Android
 export GCLOUD_HOME=/opt/google-cloud-sdk
-echo '
-export PATH=$NODE_HOME/bin:$(convertPath $PATH):~:$JAVA_HOME/bin:$M2_HOME/bin:$GRAILS_HOME/bin:$GRADLE_HOME/bin:$ANDROID_HOME/platform-tools:$GCLOUD_HOME/bin
-' > /dev/null
-export PATH=$(echo $PATH | sed -re 's/\/mnt\/c\/[^:]+://g'):~/.local/lib/aws/bin:$NODE_HOME/bin:~:$JAVA_HOME/bin:$M2_HOME/bin:$GRAILS_HOME/bin:$GRADLE_HOME/bin:$ANDROID_HOME/platform-tools:$GCLOUD_HOME/bin
+
+PATH=$(echo $PATH | sed -re 's/\/mnt\/c\/[^:]+://g')
+PATH=$PATH:$NODE_HOME/bin:~:$JAVA_HOME/bin:$M2_HOME/bin:/mnt/c/Windows/System32
+PATH=$PATH:$GRAILS_HOME/bin:$GRADLE_HOME/bin:$ANDROID_HOME/platform-tools:$GCLOUD_HOME/bin
+export PATH
+
 export PYTHONPATH=$GCLOUD_HOME/lib/third_party:$GCLOUD_HOME/platform/google_appengine
 
 unset NAME
+
+export PATH=~/.rbenv/shims:~/.rbenv/bin:$PATH
+eval "$(rbenv init -)"
+
+# hide deprecation warnings "Using the last argument as keyword parameters" etc
+# not supported in Ruby <2.7
+#export RUBYOPT='-W:no-deprecated'
 
 if [ -f ~/.bashrc_secret ]; then
     . ~/.bashrc_secret

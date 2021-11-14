@@ -1,6 +1,8 @@
 TMP=/mnt/c/Windows/Temp
 LOCAL_TMP=/mnt/c/Users/janaka/AppData/Local/Temp
 
+AWS_REG="us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-west-3 eu-central-1 eu-north-1 ap-northeast-1 ap-northeast-2 ap-southeast-1 ap-southeast-2 ap-south-1 sa-east-1"
+
 alias cmd=/mnt/c/Windows/System32/cmd.exe
 alias adb=/mnt/c/Programs/Android/sdk/platform-tools/adb.exe
 alias xcalib=/mnt/c/Programs/xcalib/xcalib.exe
@@ -13,10 +15,23 @@ alias pip='pip2.7 --disable-pip-version-check'
 alias notify-send="msg /time:3 janaka"
 alias ok='notify-send "done" && date +%T'
 function d_s() {
-	date -d @$@
+	date -d @$@ +"%Y-%m-%d %H:%M:%S"
 }
 function d() {
-	date -d @$(($1/1000))
+	date -d @$(($1/1000)) +"%Y-%m-%d %H:%M:%S"
+}
+function loop_d() {
+	loop_d_func d
+}
+function loop_d_s() {
+	loop_d_func d_s
+}
+function loop_d_func() {
+	while true; do
+		echo -n $'\n'"TS: "
+		read TS
+		$1 $TS
+	done
 }
 
 alias myip='curl ipecho.net/plain'
@@ -33,6 +48,9 @@ alias dlq='dl -q'
 alias dlb='dl --header="User-Agent: Firefox" --header="X-Requested-With: XMLHttpRequest"'
 alias dlbsize='dlb -S --method=HEAD'
 
+function bb_repos() {
+	apicall "https://bitbucket.org/api/2.0/repositories/${1:-$BB_ORG}?pagelen=100&page=${2:-1}"
+}
 function bb_pr_approve() {
 	bb_pr_op $1 $2 approve
 }
@@ -45,7 +63,11 @@ function bb_pr_check() {
 
 function bb_pr_open() {
 	confirm "opening PR '$2' on $3 of '$1'"
-	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests --method POST --header "Content-Type: application/json" --body-data "{\"title\":\"$2\",\"source\":{\"branch\":{\"name\":\"$3\"},\"repository\":{\"full_name\":\"janakaud/$1\"}},\"destination\":{\"branch\":{\"name\":\"$3\"}},\"close_source_branch\":false,\"reviewers\":[{\"type\":\"user\",\"username\":\"$BB_USER_1\"},{\"type\":\"user\",\"username\":\"$BB_USER_2\"}]}"
+	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/pullrequests --method POST --header "Content-Type: application/json" --body-data "{\"title\":\"$2\",
+\"source\":{\"branch\":{\"name\":\"$3\"},\"repository\":{\"full_name\":\"janakaud/$1\"}},
+\"destination\":{\"branch\":{\"name\":\"$3\"}},
+\"close_source_branch\":false,
+\"reviewers\":[{\"type\":\"user\",\"username\":\"$BB_USER_1\"}]}"
 }
 
 function bb_pr_decline() {
@@ -67,21 +89,52 @@ function bb_patch_op() {
 	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/$2
 }
 
+function bb_new_repo() {
+	apicall https://bitbucket.org/api/2.0/repositories/janakaud/$1 --header "Content-Type: application/json" --post-data '{"is_private":true}'
+}
+function bb_fork_repo() {
+	apicall https://bitbucket.org/api/2.0/repositories/$BB_ORG/$1/forks --method POST
+}
 function bb_del_repo() {
-	apicall https://bitbucket.org/api/2.0/repositories/janakaud/$1 --method DELETE
+	apicall_nogz https://bitbucket.org/api/2.0/repositories/janakaud/$1 --method DELETE
 }
 
 function gh_del_repo() {
 	confirm "deleting GitHub repo $1"
-	apicall --method DELETE https://api.github.com/repos/janakaud/$1
+	gh_api --method DELETE https://api.github.com/repos/janakaud/$1
 }
 function gh_new_repo() {
 	confirm "creating GitHub repo $1"
-	apicall https://api.github.com/user/repos --post-data "{\"name\":\"$1\"}"
+	gh_api https://api.github.com/user/repos --post-data "{\"name\":\"$1\"}"
+}
+function gh_fork_repo() {
+	confirm "forking GitHub repo $1 (:owner/:repo)"
+	gh_api --method POST https://api.github.com/repos/$1/forks
+}
+function gh_repos() {
+	gh_api https://api.github.com/user/repos
+}
+function gh_invites() {
+	gh_api https://api.github.com/user/repository_invitations
+}
+function gh_invite_accept() {
+	gh_api --method PATCH https://api.github.com/user/repository_invitations/$1
+}
+
+gh_token=$(cat ~/.config/cligh/cligh.conf | grep token | cut -d ' ' -f 2)
+function gh_api() {
+	dl --header "Authorization: Bearer $gh_token" "$@" | gunzip
 }
 
 function apicall() {
-	dlu janakaud --ask-password --auth-no-challenge -q "$@" | gunzip
+	apicall_nogz "$@" | gunzip
+}
+function apicall_nogz() {
+	if [ "x$PASSWORD" == "x" ]; then
+		dlu janakaud --ask-password --auth-no-challenge -q "$@"
+	else
+		dlu janakaud --http-password "$PASSWORD" --auth-no-challenge -q "$@"
+	fi
 }
 function confirm() {
 	echo -n "Press Ctrl-C to abort $1"
@@ -91,38 +144,31 @@ function confirm() {
 function ghdl() {
 	dlwg $(echo $1 | sed -e 's/github.com/codeload.github.com')/zip/master
 }
+function loop_url_rw() {
+	while true; do
+		echo -n $'\n'"URL: "
+		read url
+		$1 "$url"
+	done
+}
 
-function dev() {
-	echo $1 | sed -r -e 's/http:\/\/(localhost|127\.0\.0\.1)\/x\/docs\/([^\/]+)\/([^\/]+)\/(.*)/https:\/\/developer.adroitlogic.com\/\3\/docs\/\2\/\4/'
-}
-function dldev() {
-	dlsize $(dev $1)
-}
-function as2() {
-	echo $1 | sed -r -e 's/http:\/\/(localhost|127\.0\.0\.1)\/(x\/docs\/17\.07\/|)as2gateway\/(.*)/https:\/\/as2gateway.com\/docs\/\3/'
-}
-function dlas2() {
-	dlsize $(as2 $1)
-}
-function ghsigma() {
-	echo $1 | sed -r -e 's/http:\/\/(localhost|127\.0\.0\.1)\/(.*)/https:\/\/slappforge.github.io\/\2/'
-}
-function sigma() {
-	echo $1 | sed -r -e 's/http:\/\/(localhost|127\.0\.0\.1)\/(.*)/https:\/\/slappforge.com\/docs\/\2/'
-}
-function dlsigma() {
-	dlsize $(sigma $1)
+function server() {
+	cd ~/html; serve >/dev/null 2>&1 & cd -
 }
 
 function short() {
 	dl --header 'Content-Type: application/json' --post-data "{\"longUrl\":\"$1\"}" https://www.googleapis.com/urlshortener/v1/url?key=$GAPI_KEY | gunzip
 }
 
+function jetbrains_repo() {
+	curl -vH 'Range: bytes=1305000-1340000' https://www.jetbrains.com/intellij-repository/snapshots/
+}
+
 function ymd_ms() {
 	date -Iseconds -u -d @$(($1/1000))
 }
 
-alias showIssue='pyu show issue'
+alias showIssue='pyu --debug show issue'
 function fixIssue() {
 	COMMIT="$2"
 	if [ -z $COMMIT ]; then
@@ -141,16 +187,24 @@ function resolveIssue() {
 	readLn "Issue" ISSUE "$1"
 	readLn "Comment" COMMENT "$2"
 	readLn "State" STATE "$3"
-	readLn "Fix Version" FIX_VERSION "$FIXVER"
+	readLn "Fix Version" FIX_VERSION "$4"
 	pyuConfirm update issue --comment "$COMMENT" --command "state $STATE add fixed in $FIX_VERSION" $ISSUE
 }
 
-function issuesAfter() {
-	readLn "Project" PROJECT "$1"
-	readLn "Since epoch" LASTDAY "$(date +%s)000"
-	pyu list issues --project $PROJECT --filter "state: -Fixed -Closed -{Cannot Reproduce} -Duplicate -Incomplete updated: $(date +%Y-%m-%dT%H:%M:%S -d @$(($LASTDAY/1000+1))) .. {Today}"
+function ytAfter() {
+	_pyuAfter $1 "$2" "" ${@:3:$#}
 }
-alias checkInProgress='pyu list issues --project SIGMA --filter "state IN PROGRESS"'
+function issuesAfter() {
+	set -x
+	_pyuAfter $1 "$2" "state: -Fixed -Closed -{Cannot Reproduce} -Duplicate -Incomplete" ${@:3:$#}
+	set +x
+}
+function _pyuAfter() {
+	readLn "Project" PROJECT "$1"
+	readLn "Since epoch" LASTDAY "${2:-$(date +%s)000}"
+	pyu ${@:4:$#} --debug list issues --project $PROJECT --filter "$3 created: $(date +%Y-%m-%dT%H:%M:%S -d @$(($LASTDAY/1000+1))) .. {Today}"
+}
+alias pyuAfter='pyu list issues --filter "created: $(date +%Y-%m-%dT%H:%M:%S -d @$(($LASTDAY/1000+1))) .. {Today}"'
 alias inProgress='pyu update issue --command "state IN PROGRESS assigned to me"'
 
 function readLn() {
@@ -163,7 +217,7 @@ function readLn() {
 }
 function pyuConfirm() {
 	echo
-	echo "$@"
+	echo "${@:1:5}" "$6" ${@:7:$#}
 	echo "Press Ctrl-C to abort"
 	read
 	pyu "$@"
@@ -191,6 +245,7 @@ alias rmtmp='ORIG_DIR=$PWD; for tmp in $TMP $LOCAL_TMP /tmp; do cd $tmp && ( ls 
 alias srchhere='grep --exclude-dir=".*" -IF'
 alias srchc='srchhere -R'
 alias srch='srchc -i'
+alias srchwork='srch --exclude-dir="node_modules*" --exclude-dir="target"'
 alias host='sudo vi /etc/hosts'
 
 alias dumpon='sudo tcpdump -A -vv -s 0'
@@ -210,7 +265,11 @@ function html() {
 }
 function man2html() { man $1 | html; }
 function cat2html() { cat $1 | html > $TMP/`basename $1`.html; }
-function c2push() { cat2html $1 && push $TMP/`basename $1`.html; }
+function c2push() {
+	finalpath=$TMP/`basename $1`.html
+	cat2html $1
+	push $finalpath && rm $finalpath
+}
 
 alias atob='base64 -d -'
 alias btoa='base64 -w0'
@@ -258,11 +317,24 @@ alias revert='hg revert --no-backup'
 alias hgpatch='hg patch --no-commit'
 alias stu='hg st | grep -v -E "(^\? build|\.(iml|class)$)"'
 function up() {
-		if [ -d ".git" ]; then
-				git pull $@
-		else
-				hg pull && hg up
-		fi
+	if [ -d ".git" ]; then
+		git pull $@
+	else
+		hg pull && hg up
+	fi
+}
+function checkall() {
+	vcsall st
+}
+function upall() {
+	vcsall up
+}
+function vcsall() {
+	for i in `find -mindepth 1 -maxdepth 1 -type d`; do
+		cd $i
+		$1
+		cd -
+	done
 }
 alias shelved='hg shelve -l'
 function st() {
@@ -292,7 +364,7 @@ function swap() {
 }
 alias zkreen='xcalib -i -a'
 
-anonssh='-q -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no'
+anonssh='-oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no'
 alias assh='ssh $anonssh '
 alias asshp='ssh $anonssh -o GSSAPIAuthentication=no -o PubKeyAuthentication=no '
 alias ascp='scp $anonssh '
@@ -301,7 +373,7 @@ alias sshcfg='chmod +w ~/.ssh/config && vi ~/.ssh/config && chmod 400 ~/.ssh/con
 
 alias awsj='aws --profile janaka'
 
-function cf() { aws cloudformation $@; }
+function cf() { ${AWS:-aws} cloudformation $@; }
 function cfls() { cf describe-stacks --query 'Stacks[*].StackName' --output text $@; }
 function cfgs() { cf describe-stacks --stack-name $1 ${@:2:$#}; }
 function cfcs() { cf create-stack --stack-name $1 --template-body fileb://$2 --capabilities CAPABILITY_IAM ${@:3:$#}; }
@@ -310,13 +382,18 @@ function cfgt() { cf get-template --stack-name $1 ${@:2:$#}; }
 function cfds() { cf delete-stack --stack-name $1 ${@:2:$#}; }
 function cfse() { cf describe-stack-events --stack-name $1 --max-items ${2:-10} ${@:3:$#}; }
 function invoke() {
-	aws lambda invoke --function-name $1 --payload ${2:-"{}"} --log-type Tail /tmp/shell.log --query LogResult --output text | base64 -d
+	${AWS:-aws} lambda invoke --function-name $1 --payload "$2" --log-type Tail /tmp/$1.out --query LogResult --output text ${@:3:$#} | base64 -d
 	ok
 }
 
-EC2_LS='ec2 describe-instances --query Reservations[*].Instances[*].[LaunchTime,InstanceId,InstanceType,PublicIpAddress,State.Name,Tags]'
+EC2_LS='ec2 describe-instances --query Reservations[*].Instances[*].[LaunchTime,KeyName,InstanceId,InstanceType,SecurityGroups[0].GroupId,PublicIpAddress,State.Name,Tags]'
 EC2_IMG="ec2 describe-images --owners self --query Images"
 EC2_SNAP="ec2 describe-snapshots --owner-ids self --query Snapshots"
+
+alias imgs="aws $EC2_IMG"
+alias snaps="aws $EC2_SNAP"
+alias img='imgs --image-ids $@'
+alias snap='snaps --snapshot-ids $@'
 
 alias ec2ls='aws $EC2_LS'
 alias ec2live='ec2ls --filter Name=instance-state-name,Values=running'
@@ -324,21 +401,44 @@ alias ec2up='aws ec2 start-instances --instance-ids'
 alias ec2down='aws ec2 stop-instances --instance-ids'
 alias ec2wait='aws ec2 wait instance-running --instance-ids'
 function ec2run() {
-	aws ec2 run-instances --image-id $1 --associate-public-ip-address --instance-type t2.micro --key-name $2 --tag-specifications Key=Name,Value=$3 ${@:4:$#}
+	aws ec2 run-instances --image-id $1 --associate-public-ip-address \
+--instance-type ${4:-t3a.micro} --security-group-ids ${5:-$DEFAULT_SECURITY_GROUP} --key-name $2 \
+--tag-specifications ResourceType=instance,Tags='[{Key=Name,Value='$3'}]' ResourceType=volume,Tags='[{Key=Name,Value='$3'}]' ${@:6:$#}
+}
+function ec2tag() {
+	aws ec2 create-tags --tags "Key=Name,Value=$1" --resources ${@:2:$#}
+}
+function ec2img() {
+	aws ec2 create-image --instance-id $1 --name $2 ${@:3:$#}
+}
+function ec2rmi() {
+	aws ec2 deregister-image --image-id $1 ${@:3:$#}
+	aws ec2 delete-snapshot --snapshot-id $2 ${@:3:$#}
+}
+function ec2share() {
+	ec2_img_share $1 $2 Add add $3
+}
+function ec2unshare() {
+	ec2_img_share $1 $2 Remove remove $3
+}
+function ec2_img_share() {
+	aws ec2 modify-image-attribute --image-id $1 --launch-permission $3'=[{UserId='${5:-$AWS_ACC}'}]'
+	aws ec2 modify-snapshot-attribute --snapshot-id $2  --attribute createVolumePermission --operation-type $4 --user-ids ${5:-$AWS_ACC}
 }
 
 function ec2_ip() {
-	aws ec2 authorize-security-group-ingress --group-id ${1:-$DEFAULT_SECURITY_GROUP} --ip-permissions "ToPort=${2:-22},FromPort=${2:-22},IpProtocol=tcp,IpRanges=[{CidrIp=${3:-$(curl ipecho.net/plain)/32}}]" ${@:4:$#}
+	sg_update authorize $@
+}
+function ec2_block() {
+	sg_update revoke $@
+}
+function sg_update() {
+	aws ec2 $1-security-group-ingress --group-id ${2:-$DEFAULT_SECURITY_GROUP} --ip-permissions \
+"ToPort=${3:-22},FromPort=${3:-22},IpProtocol=tcp,IpRanges=[{CidrIp=${4:-$(curl ipecho.net/plain | cut -d . -f -2).0.0/16}}]" ${@:5:$#}
 }
 
 function awsall() {
-	for region in \
-us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 \
-eu-west-1 eu-west-2 eu-west-3 eu-central-1 eu-north-1 \
-ap-northeast-1 ap-northeast-2 ap-southeast-1 ap-southeast-2 ap-south-1 \
-sa-east-1 \
-	; do
-	#for region in us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-southeast-1; do
+	for region in $AWS_REG; do
 		echo
 		echo $region
 		aws --region $region $@
@@ -375,7 +475,7 @@ function checkbill() {
 	done
 }
 
-alias now='date +%s.%N'
+alias now='date +%s000'
 alias eeye='date -d @$((($(date +%s)-86400))) +%F'
 
 function daybill() {
@@ -385,11 +485,20 @@ function daybill() {
 }
 
 function dailybill() {
-	monthbill $1 DAILY
+	ce_bill $1 DAILY
 }
-
 function monthbill() {
-	aws --profile $1 ce get-cost-and-usage --time-period Start=$(date +%Y-%m-01),End=$(date +%Y-%m-%d) --granularity=${2:-MONTHLY} --metrics BlendedCost --group-by Type=DIMENSION,Key=SERVICE
+	ce_bill $1 MONTHLY
+}
+function ce_bill() {
+	if [ $(date +%_d) -le 2 ]; then
+		mon=$(($(date +%_m)-1))
+		if [ $mon -le 9 ]; then mon=0$mon; fi
+	else
+		mon=$(date +%m)
+	fi
+	aws --profile $1 ce get-cost-and-usage --time-period Start=${START:-$(date +%Y)-$mon-01},End=${END:-$(date +%Y-%m-%d)} \
+--granularity=$2 --metrics BlendedCost --group-by Type=DIMENSION,Key=${DIMENSION:-OPERATION}
 }
 
 alias s3loc='aws s3api get-bucket-location --bucket'
@@ -399,13 +508,19 @@ function s3ls() {
 function s3rb() {
 	aws s3 rb --force s3://$1 ${@:2:$#}
 }
+function s3rm() {
+	aws s3 rm --recursive s3://$1 ${@:2:$#}
+}
+function s3cp() {
+	aws s3 cp s3://$1 ${2:-/tmp/} ${@:3:$#}
+}
 function s3sizes() {
 	REGION=${AWS_DEFAULT_REGION:-${AWS_REGION:-"us-east-1"}}
 	defolts=()
 	killall awsr; rm /tmp/awsr_*
 	for bucket in `awsr s3api list-buckets --query 'Buckets[*].Name' --output text $@`; do
 #	for bucket in a b c d e-us-west-1 f g h i-ap-southeast-1 j k foo-bar-123 x-c-d-3; do
-		region=$(echo $bucket | grep -oP "\w+-\w+-\d\b")
+		region=$(echo $bucket | grep -oP "(us|eu|ap|sa|cn)-\w+-\d\b")
 		if [ "$region" = "$REGION" ] || [ -z $region ]; then
 			defolts+=($bucket)
 			continue
@@ -436,19 +551,61 @@ function s3metric() {
 }
 
 function s3expire() {
-	aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Enabled","Expiration":{"Days":1},"NoncurrentVersionExpiration":{"NoncurrentDays":1},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1},"Prefix":""}]}' --bucket $@
+	readLn "Days" days 1
+	aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Enabled",
+"Expiration":{"Days":'$days'},
+"NoncurrentVersionExpiration":{"NoncurrentDays":'$days'},
+"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":'$days'},
+"Prefix":""}]}' --bucket $@
 }
-
 function s3expire-versioned() {
 	aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Enabled","Expiration":{"ExpiredObjectDeleteMarker":true},"NoncurrentVersionExpiration":{"NoncurrentDays":1},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1},"Prefix":""}]}' --bucket $@
 }
-
 function s3unexpire() {
+	aws s3api delete-bucket-lifecycle --bucket $@
+echo >/dev/null \
 	aws s3api put-bucket-lifecycle-configuration --lifecycle-configuration '{"Rules":[{"Status":"Disabled","Prefix":"","Expiration":{"Days":3650}}]}' --bucket $@
 }
-
 function s3life() {
 	aws s3api get-bucket-lifecycle-configuration --bucket $@
+}
+
+function logs() {
+	startTime=${START:-$(($(now)-600000))}
+	limit=${LIMIT:-20}
+	echo "$limit, >$startTime"$'\n'
+	if [ -z $LOG_GROUP ]; then	# fallback to /aws/lambda; filter streams for today
+		streamPrefix="\"logStreamNamePrefix\":\"${LOG_STREAM_PREFIX:-$(date -u -d @$(($startTime/1000)) +%Y/%m/%d)}\","
+	else
+		streamPrefix=""
+	fi
+	if [ -n "$2" ]; then
+		filter="\"filterPattern\":\"$2\","
+	else
+		filter=""
+	fi
+	# --limit doesn't work
+	${AWS:-aws} logs filter-log-events --no-paginate --query 'events[*].[timestamp,message]' --output text --cli-input-json \
+"{\"logGroupName\":\"${LOG_GROUP:-/aws/lambda/$1}\",$streamPrefix\"limit\":$limit,$filter\"startTime\":$startTime,\"endTime\":${END:-$(now)}}" ${@:3:$#}
+}
+function log_check() {
+	if [ -n "$INTERVAL" ]; then
+		interval=$INTERVAL
+	elif [ -z $3 ]; then
+		interval=60
+	else
+		interval=600
+	fi
+	readLn "Log group suffix: /aws/lambda/" logGroup $1
+	readLn "Start time, UTC (interval=$interval)" startTime "${2:-$(d_s $(($(date +%s)-$interval)) -u)}"
+	start=$(date -d "$startTime"+00:00 +%s%3N)
+	if [ -z $start ]; then return 0; fi
+	stop=$(($start+$interval$(echo 000)))
+#	readLn "End time, UTC (default: $(date -d @$(($stop/1000)))" endTime
+echo "End: $(date -d @$(($stop/1000)))"
+set -x
+	START=$start END=$stop logs "$logGroup" "${@:3:$#}"
+set +x
 }
 
 function awscred() {
@@ -457,6 +614,9 @@ function awscred() {
 	export AWS_ACCESS_KEY_ID=$accessKey
 	export AWS_SECRET_ACCESS_KEY=$accessSecret
 	export AWS_DEFAULT_REGION=us-east-1
+}
+function clearAWS() {
+	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION;
 }
 
 function gh() { gcloud $@ --help; }
@@ -551,14 +711,12 @@ alias drmi='docker rmi -f'
 alias dps='docker ps -a --no-trunc'
 function dbu() { docker build -t $1 .; }
 
-alias ipsimg='dimg | grep adroitlogic'
-
 function push() {
 	path="$2"
 	if [ -z $path ]; then
 		path="/sdcard/"
 	fi
-	adb push "$1" $path && ok
+	cmd /C adb push "$1" $path && ok
 }
 function htmlpush() {
 	files=$@
@@ -584,7 +742,7 @@ function pull() {
 	if [ -z $path ]; then
 		path="$TMP/"
 	fi
-	adb pull /sdcard/$1 $path
+	cmd /C adb pull /sdcard/$1 $path
 }
 alias ms='adb shell'
 alias mdf='ms busybox df'
@@ -656,6 +814,13 @@ function gputhrottle() {
 }
 
 alias srcha='grep -iIr --include="*.adoc"'
+function loop_srcha() {
+	while true; do
+		echo -n $'\n'"Phrase: "
+		read phrase
+		srcha "$phrase"
+	done
+}
 
 function asciibuild() {
 	asciibinder build -p $1/$2:$3
